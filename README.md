@@ -4,7 +4,7 @@ The goal of this project is to evaluate [Blazor][blazor] client-side technology,
 
 # Application
 
-Link here: https://mhw-save-info.github.io
+Link here: https://tanukisharp.github.io/mhw-save-info/
 
 # Terms of use
 
