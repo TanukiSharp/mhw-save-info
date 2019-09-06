@@ -1,5 +1,133 @@
 ﻿@page "/"
 
-<h1>Hello, world!</h1>
+@using System.IO;
+@using System.Threading;
+@using System.Diagnostics;
+@using Blazor.FileReader;
+@using MHWSaveUtils;
 
-Welcome to your new app.
+@inject IFileReaderService fileReaderService;
+
+@* Code mostly taken from https://github.com/Tewr/BlazorFileReader/blob/master/src/Demo/Blazor.FileReader.Demo.Common/DragnDropCommon.razor *@
+
+<style>
+.@dropTargetClass {
+    display:block;
+    padding: 20px;
+    margin-bottom: 10px;
+    border: 1px dashed black;
+    border-radius: 5px;
+}
+.@dropTargetDragClass {
+    border-color: dodgerblue;
+    font-weight: bold;
+}
+</style>
+
+<div class="@DropClass" @ref=dropTargetElement @ondrop=OnDrop @ondragenter=OnDragEnter @ondragleave=OnDragLeave>
+    Drop your Monster Hunter World save file here. (&lt;SteamDirectory&gt;/userdata/???/582010/remote/SAVEDATA1000)
+    @foreach (var fileInfo in FileList)
+    {
+        <br />@fileInfo.Name
+    }
+</div>
+<br />
+<br />
+<textarea style="max-width: 100%;" cols="150" rows="20">@Output</textarea>
+
+@code {
+    ElementReference dropTargetElement;
+    IFileReaderRef dropReference;
+
+    const string dropTargetDragClass = "droptarget-drag";
+    const string dropTargetClass = "droptarget";
+
+    private List<string> dropClasses = new List<string>() { dropTargetClass };
+
+    public string DropClass => string.Join(" ", dropClasses);
+
+    string Output { get; set; }
+    List<IFileInfo> FileList { get; } = new List<IFileInfo>();
+
+    protected override async Task OnAfterRenderAsync(bool isFirstRender)
+    {
+        dropReference = fileReaderService.CreateReference(dropTargetElement);
+        await dropReference.RegisterDropEventsAsync();
+    }
+
+    public async Task ClearFile()
+    {
+        await dropReference.ClearValue();
+        await this.RefreshFileList();
+    }
+
+    public void OnDragEnter(EventArgs e)
+    {
+        dropClasses.Add(dropTargetDragClass);
+    }
+
+    public void OnDragLeave(EventArgs e)
+    {
+        dropClasses.Remove(dropTargetDragClass);
+    }
+
+    public async Task OnDrop(EventArgs e)
+    {
+        Output += "Dropped a file.";
+        dropClasses.Remove(dropTargetDragClass);
+        this.StateHasChanged();
+        await this.RefreshFileList();
+        await ReadFile();
+    }
+
+    private async Task RefreshFileList()
+    {
+        this.FileList.Clear();
+        foreach (var file in await dropReference.EnumerateFilesAsync())
+        {
+            var fileInfo = await file.ReadFileInfoAsync();
+            this.FileList.Add(fileInfo);
+        }
+        this.StateHasChanged();
+    }
+
+    public async Task ReadFile()
+    {
+        Output = string.Empty;
+        this.StateHasChanged();
+        var nl = Environment.NewLine;
+
+        foreach (IFileReference file in await dropReference.EnumerateFilesAsync())
+        {
+            var stream = new MemoryStream();
+
+            Output += $"Decrypting save data, this can be long...{nl}";
+            this.StateHasChanged();
+
+            Stopwatch sw = Stopwatch.StartNew();
+
+            using (Stream inputStream = await file.CreateMemoryStreamAsync())
+            {
+                await Crypto.DecryptAsync(inputStream, stream, CancellationToken.None);
+            }
+
+            sw.Stop();
+
+            Output += $"Decryption done. ({sw.ElapsedMilliseconds} ms){nl}";
+            Output += nl;
+
+            using (var weaponUsageReader = new WeaponUsageReader(stream))
+            {
+                IEnumerable<WeaponUsageSaveSlotInfo> slots = weaponUsageReader.Read();
+
+                foreach (WeaponUsageSaveSlotInfo slotInfo in slots)
+                {
+                    string playtime = MiscUtils.PlaytimeToGameString(slotInfo.Playtime);
+                    Output += $"Name: {slotInfo.Name}, Rank: {slotInfo.Rank}, Play time: {playtime}{nl}";
+                }
+            }
+
+            this.StateHasChanged();
+        }
+    }
+}
