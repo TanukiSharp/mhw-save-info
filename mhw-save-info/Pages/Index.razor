@@ -91,30 +91,36 @@
         this.StateHasChanged();
     }
 
+    private static readonly string NewLine = Environment.NewLine;
+
+    private void Log(string str, bool update = true)
+    {
+        Output += $"[{DateTime.Now.ToString("HH:mm:sss.fff")}] {str}{NewLine}";
+        if (update)
+            this.StateHasChanged();
+    }
+
     public async Task ReadFile()
     {
         Output = string.Empty;
         this.StateHasChanged();
-        var nl = Environment.NewLine;
 
         foreach (IFileReference file in await dropReference.EnumerateFilesAsync())
         {
             var stream = new MemoryStream();
 
-            Output += $"Decrypting save data, this can be long...{nl}";
-            this.StateHasChanged();
+            Log($"Decrypting save data, this can be long...");
 
             Stopwatch sw = Stopwatch.StartNew();
 
             using (Stream inputStream = await file.CreateMemoryStreamAsync())
             {
-                await Crypto.DecryptAsync(inputStream, stream, CancellationToken.None);
+                await Crypto.ParallelDecryptAsync(inputStream, stream, CancellationToken.None);
             }
 
             sw.Stop();
 
-            Output += $"Decryption done. ({sw.ElapsedMilliseconds} ms){nl}";
-            Output += nl;
+            Log($"Decryption done. ({sw.ElapsedMilliseconds} ms)");
 
             using (var weaponUsageReader = new WeaponUsageReader(stream))
             {
@@ -123,7 +129,7 @@
                 foreach (WeaponUsageSaveSlotInfo slotInfo in slots)
                 {
                     string playtime = MiscUtils.PlaytimeToGameString(slotInfo.Playtime);
-                    Output += $"Name: {slotInfo.Name}, Rank: {slotInfo.Rank}, Play time: {playtime}{nl}";
+                    Log($"Name: {slotInfo.Name}, Rank: {slotInfo.Rank}, Play time: {playtime}", false);
                 }
             }
 
